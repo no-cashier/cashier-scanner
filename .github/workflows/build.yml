@@ -59,15 +59,15 @@ jobs:
         working-directory: build_app
         run: |
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release --split-per-abi
 
       - uses: actions/upload-artifact@v4
         with:
           name: cashier-scanner-apk
-          path: build_app/build/app/outputs/flutter-apk/app-release.apk
+          path: build_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-${{ github.run_number }}
           name: APK ${{ github.run_number }}
-          files: build_app/build/app/outputs/flutter-apk/app-release.apk
+          files: build_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
