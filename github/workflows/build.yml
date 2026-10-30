@@ -1,0 +1,73 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android project
+        run: |
+          flutter create --platforms=android --org com.noor --project-name cashier_scanner build_app
+          cp pubspec.yaml build_app/pubspec.yaml
+          rm -rf build_app/lib
+          cp -r lib build_app/lib
+
+      - name: Patch manifest and gradle
+        run: |
+          python3 - <<'PY'
+          import glob, re
+          mf = "build_app/android/app/src/main/AndroidManifest.xml"
+          t = open(mf, encoding="utf-8").read()
+          perms = (
+              '<uses-permission android:name="android.permission.INTERNET"/>\n'
+              '    <uses-permission android:name="android.permission.CAMERA"/>\n'
+              '    <uses-permission android:name="android.permission.VIBRATE"/>\n'
+              '    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n'
+              '    <application'
+          )
+          t = t.replace("<application", perms, 1)
+          t = re.sub(r"(<application\b)", r'\1 android:usesCleartextTraffic="true"', t, count=1)
+          t = re.sub(r'android:label="[^"]*"', 'android:label="Cashier Scanner"', t, count=1)
+          open(mf, "w", encoding="utf-8").write(t)
+          for g in glob.glob("build_app/android/app/build.gradle*"):
+              s = open(g, encoding="utf-8").read()
+              s = s.replace("flutter.minSdkVersion", "24")
+              open(g, "w", encoding="utf-8").write(s)
+          print(t)
+          PY
+
+      - name: Build APK
+        working-directory: build_app
+        run: |
+          flutter pub get
+          flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cashier-scanner-apk
+          path: build_app/build/app/outputs/flutter-apk/app-release.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: APK ${{ github.run_number }}
+          files: build_app/build/app/outputs/flutter-apk/app-release.apk
