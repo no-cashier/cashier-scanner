@@ -44,8 +44,10 @@ class ScanPage extends StatefulWidget {
 
 class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   final MobileScannerController cam = MobileScannerController(
-    facing: CameraFacing.back,
+    facing: CameraFacing.front,
+    cameraResolution: const Size(1920, 1080),
     detectionSpeed: DetectionSpeed.normal,
+    detectionTimeoutMs: 100,
     formats: const [
       BarcodeFormat.ean13,
       BarcodeFormat.ean8,
@@ -62,7 +64,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   bool _looping = false;
   String _status = 'جاري البحث عن الكاشير...';
   String _lastCode = '';
-  String _info = 'وجّه الكاميرا نحو الباركود';
+  String _info = 'ضع الباركود أمام الكاميرا';
   final List<String> _recent = [];
   final Map<String, int> _seen = {};
 
@@ -222,179 +224,4 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   void _onDetect(BarcodeCapture cap) {
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final b in cap.barcodes) {
-      final v = b.rawValue;
-      if (v == null || v.isEmpty) continue;
-      final last = _seen[v];
-      _seen[v] = now;
-      if (last == null || now - last > kRepeatGapMs) {
-        _send(v);
-      }
-    }
-    if (_seen.length > 200) {
-      _seen.removeWhere((k, t) => now - t > 10000);
-    }
-  }
-
-  void _send(String code) {
-    final ws = _ws;
-    if (ws == null || !_connected) {
-      _set(() {
-        _lastCode = code;
-        _info = 'غير متصل بالكاشير';
-      });
-      return;
-    }
-    try {
-      ws.add(jsonEncode({'type': 'scan', 'code': code}));
-      HapticFeedback.mediumImpact();
-      SystemSound.play(SystemSoundType.click);
-      _set(() {
-        _lastCode = code;
-        _info = 'تم الإرسال...';
-        _recent.insert(0, code);
-        if (_recent.length > 6) _recent.removeLast();
-      });
-    } catch (_) {
-      _closed();
-    }
-  }
-
-  Future<void> _askHost() async {
-    final ctl = TextEditingController(text: _host ?? '');
-    final v = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('عنوان الكمبيوتر'),
-        content: TextField(
-          controller: ctl,
-          keyboardType: TextInputType.number,
-          textDirection: TextDirection.ltr,
-          decoration: const InputDecoration(hintText: '192.168.1.5'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('إلغاء')),
-          TextButton(
-            onPressed: () => Navigator.pop(c, ctl.text.trim()),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
-    );
-    if (v != null && v.isNotEmpty) {
-      final p = await SharedPreferences.getInstance();
-      await p.setString('host', v);
-      _host = v;
-      _ws?.close();
-      _ws = null;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final green = const Color(0xFF12D6A0);
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-              child: Row(
-                children: [
-                  const Text(
-                    '✦ ماسح الكاشير',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFFE9C46A),
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: _askHost,
-                    icon: const Icon(Icons.settings),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1B1550),
-                borderRadius: BorderRadius.circular(99),
-                border: Border.all(
-                  color: _connected ? green : const Color(0xFFE5484D),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_connected ? '🟢 ' : '🔴 '),
-                  Flexible(child: Text(_status, overflow: TextOverflow.ellipsis)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE9C46A), width: 2),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: MobileScanner(
-                  controller: cam,
-                  onDetect: _onDetect,
-                  errorBuilder: (context, error) => const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text(
-                        'تعذر تشغيل الكاميرا، اسمح للتطبيق باستخدام الكاميرا من إعدادات الجهاز',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.all(14),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1B1550),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF32288A)),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    _lastCode.isEmpty ? '—' : _lastCode,
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                      color: Color(0xFFF6D98B),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(_info, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
-                  if (_recent.length > 1) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'آخر المسح: ${_recent.skip(1).take(3).join('  •  ')}',
-                      textDirection: TextDirection.ltr,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFFA9A3D6)),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+      f
