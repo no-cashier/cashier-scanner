@@ -81,7 +81,46 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ws?.close();
-    cam.dispo
+    cam.dispose();
+    WakelockPlus.disable();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WakelockPlus.enable();
+      if (_ws == null) _connectLoop();
+    }
+  }
+
+  Future<void> _start() async {
+    final p = await SharedPreferences.getInstance();
+    _host = p.getString('host');
+    _connectLoop();
+  }
+
+  void _set(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
+  // ---------- الاتصال بالكمبيوتر ----------
+  Future<bool> _alive(String ip) async {
+    final c = HttpClient();
+    c.connectionTimeout = const Duration(milliseconds: 900);
+    try {
+      final req = await c
+          .getUrl(Uri.parse('http://$ip:$kPort/api/ping'))
+          .timeout(const Duration(milliseconds: 1200));
+      final res = await req.close().timeout(const Duration(milliseconds: 1500));
+      final body = await res.transform(utf8.decoder).join();
+      return body.contains('smart-cashier');
+    } catch (_) {
+      return false;
+    } finally {
+      c.close(force: true);
+    }
+  }
       Future<String?> _discover() async {
     final prefixes = <String>{};
     try {
